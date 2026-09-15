@@ -53,6 +53,13 @@ relatively few and change slowly.
 | Growth | Grows rapidly | Grows slowly |
 | Example | `Sales_Fact` | `Dim_Customer`, `Dim_Product` |
 
+**Trade-off**
+
+| Aspect | Fact Table | Dimension Table |
+|--------|-----------|-----------------|
+| ✅ Pros | Compact numeric storage; efficient aggregation | Rich, human-readable context for filtering/grouping |
+| ❌ Cons | Meaningless without dimensions (just keys + numbers) | Redundant text; can grow wide and need SCD handling |
+
 ---
 
 ## 2. Star Schema vs Snowflake Schema
@@ -83,6 +90,14 @@ Dim_Prod — FACT — Dim_Cust      Dim_Prod — FACT — Dim_Cust
 | Query speed | Faster | Slower |
 | Storage | More | Less |
 
+**Trade-off**
+
+| Aspect | Star | Snowflake |
+|--------|------|-----------|
+| ✅ Pros | Fast, simple queries; easy for BI tools | Saves storage; better data integrity; less redundancy |
+| ❌ Cons | Data redundancy; higher storage | Complex queries; more joins; slower reads |
+| Best when | Read-heavy analytics, cheap storage | Storage-sensitive, highly normalized source data |
+
 ---
 
 ## 3. Surrogate Key vs Natural Key
@@ -103,6 +118,13 @@ Dim_Prod — FACT — Dim_Cust      Dim_Prod — FACT — Dim_Cust
 
 **Best practice:** Use surrogate keys as primary keys in dimensions and store the natural key as
 an attribute for lineage.
+
+**Trade-off**
+
+| Aspect | Natural Key | Surrogate Key |
+|--------|-------------|---------------|
+| ✅ Pros | Meaningful; no extra column; ties to source | Stable, compact, fast joins; enables SCD Type 2 |
+| ❌ Cons | Can change/reuse; large composites; breaks history | Extra column; meaningless; needs mapping to business key |
 
 ---
 
@@ -126,6 +148,13 @@ CREATE TABLE Attendance_Fact (
 -- "How many students attended each class?" = COUNT(*)
 ```
 
+**Trade-off**
+
+| Aspect | Factless Fact Table |
+|--------|---------------------|
+| ✅ Pros | Cleanly models events/coverage; enables counting and many-to-many relationships |
+| ❌ Cons | No stored measures (metrics come only from `COUNT`); can confuse analysts expecting numeric facts |
+
 ---
 
 ## 5. Degenerate Dimension
@@ -143,6 +172,13 @@ Sales_Fact
 +-----------+-----------+----------+----------------+--------+
 |   2026091 |   55      |   101    |  INV-0098      |  50.00 |   <- invoice_number is degenerate
 ```
+
+**Trade-off**
+
+| Aspect | Degenerate Dimension |
+|--------|----------------------|
+| ✅ Pros | Avoids a pointless single-column dimension table; keeps transaction ID handy for grouping |
+| ❌ Cons | No place for related attributes; can bloat the fact table if the value is large text |
 
 ---
 
@@ -163,9 +199,13 @@ same structure, keys, and meaning everywhere.
       Dim_Customer  (conformed)
 ```
 
----
+**Trade-off**
 
-## 7. Slowly Changing Dimensions (SCD)
+| Aspect | Conformed Dimension |
+|--------|---------------------|
+| ✅ Pros | Consistency across the enterprise; enables cross-fact/drill-across analysis; single source of truth |
+| ❌ Cons | Requires governance and coordination; harder to change (many downstream consumers) |
+
 
 Strategies for handling changes to dimension attributes over time (e.g., a customer's address).
 
@@ -183,6 +223,14 @@ Strategies for handling changes to dimension attributes over time (e.g., a custo
 | 101 | C001 | London | 01-OCT-2025 | 15-JAN-2026 | No |
 | 102 | C001 | Manchester | 16-JAN-2026 | 31-DEC-9999 | Yes |
 
+**Trade-off**
+
+| Type | ✅ Pros | ❌ Cons |
+|------|--------|--------|
+| Type 1 (Overwrite) | Simple; small table | No history — past values lost |
+| Type 2 (New row) | Full history; point-in-time accuracy | Table grows; more complex ETL; needs surrogate keys |
+| Type 3 (Prev column) | Easy current-vs-prior compare | Only one step of history; extra columns |
+
 ---
 
 ## 8. Grain Definition (Very Important)
@@ -199,6 +247,13 @@ measures) depends on it.
 
 **Rule:** Never mix grains in one fact table. All measures must be consistent with the declared grain
 (additive at that level).
+
+**Trade-off**
+
+| Grain choice | ✅ Pros | ❌ Cons |
+|--------------|--------|--------|
+| Fine (atomic, e.g., line-item) | Maximum flexibility; can roll up to any level | Larger fact table; more storage/compute |
+| Coarse (aggregated, e.g., daily total) | Smaller, faster queries | Detail lost; can't drill down; risk of wrong metrics |
 
 ---
 
@@ -226,6 +281,13 @@ PARTITION BY RANGE (date_key) (
 );
 ```
 
+**Trade-off**
+
+| Aspect | Partitioning |
+|--------|--------------|
+| ✅ Pros | Partition pruning → faster queries; easy archival; parallel loads/maintenance |
+| ❌ Cons | Poor partition-key choice hurts performance; too many small partitions add overhead; skew risk |
+
 ---
 
 ## 10. CDC vs Incremental Load
@@ -248,6 +310,13 @@ like `last_modified_date` or an increasing ID.
 | Captures deletes | Usually no | Yes |
 | Latency | Batch | Near real-time |
 | Complexity | Low | Higher |
+
+**Trade-off**
+
+| Aspect | Incremental Load | CDC |
+|--------|------------------|-----|
+| ✅ Pros | Easy to build; no special DB features | Catches all changes incl. deletes; near real-time; low source load |
+| ❌ Cons | Misses deletes; needs reliable timestamp | Complex setup; requires log access/tooling; more moving parts |
 
 ---
 
@@ -272,3 +341,10 @@ VALUES (9999, 'C999', 'Unknown', 'Y');
 
 **Best practice:** Use inferred members so facts are never dropped, with an `inferred_flag` to track
 and backfill them.
+
+**Trade-off**
+
+| Strategy | ✅ Pros | ❌ Cons |
+|----------|--------|--------|
+| Inferred member (stub) | Facts never lost; loads continue; backfilled later | Temporary "Unknown" values; needs update logic to enrich |
+| Hold / reprocess | Dimension always complete when fact loads | Facts delayed; extra staging complexity; risk of stuck records |
